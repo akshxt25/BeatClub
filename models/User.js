@@ -7,9 +7,22 @@ const userSchema = new mongoose.Schema(
             required: true,
             unique: true
         },
-        rooms_owner:[],
-        rooms_joined:[],
-        songs_suggested:[],
+        rooms_owner:[{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Room"
+        }],
+        rooms_joined:[{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Room"
+        }],
+        songs_suggested:[{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Song",
+        }],
+        password: {
+            type: String, 
+            required: true
+        }
     }, {timestamps: true});
 
 export default mongoose.model("User", userSchema);
