@@ -86,3 +86,15 @@ export const login = async (req, res) => {
     });
   }
 };
+
+export const getUserRooms = async (req, res) => {
+
+};
+
+export const getUserSuggestedSongs = async (req, res) => {
+
+};
+
+export const getUserChats = async (req, res) => {
+  
+}

@@ -273,6 +273,14 @@ export const exitRoom = async (req, res) => {
   }
 };
 
+export const toogleRoomState = async (req, res) => {
+
+};
+
+export const removeMember = async (req, res) => {
+
+};
+
 export const addSongToRoomQueue = async (req, res) => {
   const { roomName, song } = req.body;
   const user = req.user;
@@ -339,4 +347,44 @@ export const addSongToRoomQueue = async (req, res) => {
       message: "Error adding song to room",
     });
   }
+};
+
+export const removeSongFromQueue = async (req, res) => {
+
+};
+
+export const playNextSong = async (req, res) => {
+
+};
+
+export const setCurrentSong = async (req, res) => {
+
+};
+
+export const getRoomDetails = async (req, res) => {
+
+};
+
+export const getRoomUsers = async (req, res) => {
+
+};
+
+export const clearSongQueue = async (req, res) => {
+
+};
+
+export const sendRoomMessage = async (req, res) => {
+
+};
+
+export const getRoomChat = async (req, res) => {
+
+};
+
+export const deleteMessage = async (req, res) => {
+
+};
+
+export const clearRoomChat = async (req, res) => {
+
 };

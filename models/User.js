@@ -22,6 +22,10 @@ const userSchema = new mongoose.Schema(
         password: {
             type: String, 
             required: true
+        },
+        chat:{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Chat"
         }
     }, {timestamps: true});
 
