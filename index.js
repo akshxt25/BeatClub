@@ -4,10 +4,10 @@ import { configDotenv } from "dotenv";
 import {connectDb} from "./config/db.js";
 
 configDotenv();
-
+connectDb();
 const app = express();
 
-connectDb();
+
 
 app.use(cors());
 app.use(express.json());

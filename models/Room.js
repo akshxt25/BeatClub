@@ -24,7 +24,7 @@ const roomSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Song"
         },
-        currentSongInQueue: [{
+        currentSongsInQueue: [{
             type: mongoose.Schema.Types.ObjectId,
             ref: "Song"
         }],
@@ -32,7 +32,7 @@ const roomSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "Content"
         },
-        roomChat : {},
+        //roomChat : {},
     }, {timestamps: true});
 
 export default mongoose.model("Room", roomSchema);
