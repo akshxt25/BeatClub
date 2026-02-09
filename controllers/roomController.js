@@ -1,5 +1,6 @@
 import Link from "../models/Link.js";
 import Room from "../models/Room.js";
+import Song from "../models/Song.js";
 import User from "../models/User.js";
 
 export const createRoom = async (req, res) => {
@@ -268,6 +269,74 @@ export const exitRoom = async (req, res) => {
     return res.status(500).json({
       success: false,
       messgae: "some error in exiting room",
+    });
+  }
+};
+
+export const addSongToRoomQueue = async (req, res) => {
+  const { roomName, song } = req.body;
+  const user = req.user;
+
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
+
+  if (!song || typeof song !== "string") {
+    return res.status(400).json({
+      success: false,
+      message: "Song must be a valid string URL",
+    });
+  }
+
+  try {
+    const room = await Room.findOne({ roomName });
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room does not exist",
+      });
+    }
+
+    // .some() -> returns only true false, but .find() -> returns the object.
+    const isUserInRoom = room.users.some(
+      id => id.toString() === user._id.toString()
+    );
+
+    if (!isUserInRoom) {
+      return res.status(403).json({
+        success: false,
+        message: "User is not part of this room",
+      });
+    }
+
+    const newSong = await Song.create({
+      url: song,
+      suggested_by: user._id,
+      suggested_in_room: room._id,
+    });
+
+    if (!room.currentSong) {
+      room.currentSong = newSong._id;
+    } 
+
+   room.currentSongsInQueue.push(newSong._id);
+
+    await room.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Song added to room queue",
+      song: newSong,
+    });
+  } catch (error) {
+    console.error("Add Song Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error adding song to room",
     });
   }
 };
