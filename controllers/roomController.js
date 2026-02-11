@@ -2,10 +2,11 @@ import Link from "../models/Link.js";
 import Room from "../models/Room.js";
 import Song from "../models/Song.js";
 import User from "../models/User.js";
+import QueueItem from "../models/QueueItem.js";
 
 export const createRoom = async (req, res) => {
   const { roomName, isOpen } = req.body;
-  
+
   if (!roomName) {
     return res.status(401).json({
       message: "Room Name not found",
@@ -37,19 +38,26 @@ export const createRoom = async (req, res) => {
       roomName: roomName,
       owner: req.user._id,
       isOpen: isOpen,
-      users: [req.user._id]
+      users: [req.user._id],
     });
 
     await User.findByIdAndUpdate(req.user._id, {
-      $push: { rooms_owner: createdRoom._id  , rooms_joined: createdRoom._id },
+      $push: { rooms_owner: createdRoom._id, rooms_joined: createdRoom._id },
+    });
+
+    const hash = crypto.randomBytes(6).toString("hex");
+
+    await Link.create({
+      roomId: createdRoom._id,
+      hash,
     });
 
     return res.status(201).json({
       success: true,
       message: "Room created successfully",
       room: createdRoom,
+      shareLink: `/share/${hash}`,
     });
-
   } catch (error) {
     return res.status(401).json("Some error in room creation");
   }
@@ -58,23 +66,22 @@ export const createRoom = async (req, res) => {
 export const deleteRoom = async (req, res) => {
   const { roomName } = req.body;
   try {
-    
-    if(!req.user){
+    if (!req.user) {
       return res.status(401).json({
         success: false,
-        message: "User not logged in"
-      })
+        message: "User not logged in",
+      });
     }
 
     const checkValidRoom = await Room.findOne({ roomName });
 
     if (!checkValidRoom) {
       return res.status(401).json("Invalid room name");
-    } 
+    }
 
     const room = await Room.findOne({
-      owner: req.user._id
-    })
+      owner: req.user._id,
+    });
 
     if (room.owner.toString() !== req.user._id.toString()) {
       return res.status(403).json({
@@ -89,12 +96,12 @@ export const deleteRoom = async (req, res) => {
 
     await User.updateMany(
       { rooms_joined: room._id },
-      { $pull: { rooms_joined: room._id } }
+      { $pull: { rooms_joined: room._id } },
     );
 
     const result = await Room.deleteOne({ _id: room._id });
 
-    console.log("result of deleting room: ",result);
+    console.log("result of deleting room: ", result);
 
     return res.status(200).json({
       success: true,
@@ -106,76 +113,84 @@ export const deleteRoom = async (req, res) => {
   }
 };
 
-export const shareRoomLink = async (req, res) => {
-  const share = req.body.share;
+// export const shareRoomLink = async (req, res) => {
+//   const {roomName , share} = req.body;
+//   const user = req.user;
 
-  if (share) {
-    const existingLink = await Link.findOne({
-      userId: req.userId,
-    });
+//   if(!user){
+//     return res.status(401).json({
+//       success: false,
+//       message: "Unauthorized"
+//     })
+//   }
 
-    if (existingLink) {
-      res.json({
-        hash: existingLink.hash,
-      });
-      return;
-    }
+//   try {
+//     const room = await Room.findOne({
+//       roomName: roomName
+//     })
 
-    const hash = random(8);
-    console.log("generated hash: ", hash);
+//     if(!room){
+//       return res.status(401).json({
+//         success: false,
+//         message: "Room not found"
+//       })
+//     }
 
-    await LinkModel.create({
-      userId: req.userId,
-      hash: hash,
-    });
+//     const isOwner = room.owner.toString() === user._id.toString();
+//     const isAdmin = room.admins.some(
+//       id => id.toString() === user._id.toString()
+//     );
 
-    res.json({
-      hash: hash,
-    });
-  } else {
-    await LinkModel.deleteOne({
-      //@ts-ignore
-      userId: req.userId,
-    });
-    res.json({
-      message: "Removed Link",
-    });
-  }
-};
+//     if (!isOwner && !isAdmin) {
+//       return res.status(403).json({
+//         success: false,
+//         message: "Only owner/admin can share room",
+//       });
+//     }
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: "Some error occured"
+//     })
+//   }
+// };
 
 export const shareRoomContent = async (req, res) => {
-  const hash = req.params.sharelink;
+  const { sharelink } = req.params;
 
-  const link = await Link.findOne({
-    hash: hash,
-  });
+  try {
+    const link = await Link.findOne({ hash: sharelink });
 
-  if (!link) {
-    res.status(411).json({
-      message: "Sorry incorrect input",
+    if (!link) {
+      return res.status(404).json({
+        success: false,
+        message: "Invalid share link"
+      });
+    }
+
+    const room = await Room.findById(link.roomId)
+      .populate("owner", "userName")
+      .populate({
+        path: "currentSong",
+        populate: { path: "song" }
+      })
+      .populate({
+        path: "queue",
+        populate: { path: "song" }
+      });
+
+    return res.json({
+      success: true,
+      room
     });
-    return;
-  }
 
-  const content = await ContentModel.find({
-    userId: link.userId,
-  });
-
-  const user = await UserModel.findOne({
-    _id: link.userId,
-  });
-
-  if (!user) {
-    res.status(411).json({
-      message: "User not found , error should ideally not happen",
+  } catch (error) {
+    console.error("Share Room Content Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching room"
     });
-    return;
   }
-
-  res.json({
-    username: user.username,
-    content: content,
-  });
 };
 
 export const joinRoom = async (req, res) => {
@@ -211,7 +226,7 @@ export const joinRoom = async (req, res) => {
     await existingRoom.save();
 
     const alreadyJoined = req.user.rooms_joined.some(
-      id => id.toString() === existingRoom._id.toString()
+      (id) => id.toString() === existingRoom._id.toString(),
     );
 
     if (!alreadyJoined) {
@@ -274,75 +289,74 @@ export const exitRoom = async (req, res) => {
 };
 
 export const toogleRoomState = async (req, res) => {
-  const {roomName, isOpen} = req.body;
+  const { roomName, isOpen } = req.body;
   const user = req.user;
 
-  if(!user){
+  if (!user) {
     return res.status(401).json({
       success: false,
-      message: "You are not logged in"
-    })
-  };
+      message: "You are not logged in",
+    });
+  }
   try {
     const room = await Room.findOneAndUpdate(
       {
-      roomName: roomName,
-      owner: user._id
+        roomName: roomName,
+        owner: user._id,
       },
       {
-        isOpen: !isOpen
+        isOpen: !isOpen,
       },
       {
-        new : true
-      }
+        new: true,
+      },
     );
 
-    if(!room){
+    if (!room) {
       return res.status(401).json({
         success: false,
-        message: "Owner or RoomName not found"
-      })
-    };
+        message: "Owner or RoomName not found",
+      });
+    }
 
     return res.status(200).json({
       success: true,
       message: "Room state updated successfully",
       room,
     });
-
   } catch (error) {
     console.error(error);
     return res.status(401).json({
       success: false,
-      message: "Error in toggling Room's State"
-    })
+      message: "Error in toggling Room's State",
+    });
   }
 };
 
 export const removeMember = async (req, res) => {
   const { userToDelete, roomName } = req.body;
   const user = req.user;
-  if(!user){
+  if (!user) {
     return res.status(401).json({
       success: false,
-      message: "You are not logged in"
-    })
+      message: "You are not logged in",
+    });
   }
   try {
     const room = await Room.findOne({
-      owner : user._id,
-      roomName: roomName
-    })
+      owner: user._id,
+      roomName: roomName,
+    });
 
-    if(!room){
+    if (!room) {
       return res.status(401).json({
         success: false,
-        messsage : "Room or Owner not found"
-      })
+        messsage: "Room or Owner not found",
+      });
     }
 
     const isMember = room.users.some(
-      (id) => id.toString() === userToDelete.toString()
+      (id) => id.toString() === userToDelete.toString(),
     );
 
     if (!isMember) {
@@ -364,15 +378,14 @@ export const removeMember = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "User removed from room"
-    })
-
+      message: "User removed from room",
+    });
   } catch (error) {
     console.error(error);
     return res.status(401).json({
       success: false,
-      message: "Error in removing member"
-    })
+      message: "Error in removing member",
+    });
   }
 };
 
@@ -404,9 +417,8 @@ export const addSongToRoomQueue = async (req, res) => {
       });
     }
 
-    // .some() -> returns only true false, but .find() -> returns the object.
     const isUserInRoom = room.users.some(
-      id => id.toString() === user._id.toString()
+      (id) => id.toString() === user._id.toString(),
     );
 
     if (!isUserInRoom) {
@@ -422,18 +434,27 @@ export const addSongToRoomQueue = async (req, res) => {
       suggested_in_room: room._id,
     });
 
-    if (!room.currentSong) {
-      room.currentSong = newSong._id;
-    } 
+    const position = room.queue.length + 1;
 
-   room.currentSongsInQueue.push(newSong._id);
+    const queueItem = await QueueItem.create({
+      room: room._id,
+      song: newSong._id,
+      addedBy: user._id,
+      position,
+    });
+
+    room.queue.push(queueItem._id);
+
+    if (!room.currentSong) {
+      room.currentSong = queueItem._id;
+    }
 
     await room.save();
 
     return res.status(200).json({
       success: true,
       message: "Song added to room queue",
-      song: newSong,
+      queueItem,
     });
   } catch (error) {
     console.error("Add Song Error:", error);
@@ -445,41 +466,499 @@ export const addSongToRoomQueue = async (req, res) => {
 };
 
 export const removeSongFromQueue = async (req, res) => {
+  const { roomName, queueItemId } = req.body;
+  const user = req.user;
 
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
+
+  try {
+    const room = await Room.findOne({ roomName });
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    const queueItem = await QueueItem.findById(queueItemId);
+
+    if (!queueItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Song not found in queue",
+      });
+    }
+
+    const isOwner = room.owner.toString() === user._id.toString();
+    const isAdmin = room.admins.some(
+      (id) => id.toString() === user._id.toString(),
+    );
+    const isAdder = queueItem.addedBy.toString() === user._id.toString();
+
+    if (!isOwner && !isAdmin && !isAdder) {
+      return res.status(403).json({
+        success: false,
+        message: "Not allowed to remove this song",
+      });
+    }
+
+    room.queue = room.queue.filter((id) => id.toString() !== queueItemId);
+
+    if (room.currentSong?.toString() === queueItemId) {
+      room.currentSong = room.queue[0] || null;
+    }
+
+    await queueItem.deleteOne();
+
+    const remainingItems = await QueueItem.find({ room: room._id }).sort(
+      "position",
+    );
+
+    for (let i = 0; i < remainingItems.length; i++) {
+      remainingItems[i].position = i + 1;
+      await remainingItems[i].save();
+    }
+
+    await room.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Song removed from queue",
+    });
+  } catch (error) {
+    console.error("Remove Song Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error removing song",
+    });
+  }
 };
 
 export const playNextSong = async (req, res) => {
+  const { roomName } = req.body;
+  const user = req.user();
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "you are not logged in",
+    });
+  }
+  try {
+    const room = await Room.findOne({
+      roomName: roomName,
+    });
+    if (!room) {
+      return res.status(401).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+    const isOwner = room.owner.toString() === user._id.toString();
+    const isAdmin = room.admins.some(
+      (id) => id.toString() === user._id.toString(),
+    );
+    if (!isOwner && !isAdmin) {
+      return res.status(401).json({
+        success: false,
+        message: "Only admin or owner can change the song",
+      });
+    }
 
+    if (!room.currentSong) {
+      return res.status(401).json({
+        success: false,
+        message: "No current song playing",
+      });
+    }
+
+    const currentItem = await QueueItemm.findById(room.currentSong);
+
+    const nextItem = await Queue.findOne({
+      room: room._id,
+      position: currItem.position + 1,
+    });
+
+    if (!nextItem) {
+      room.currentSong = null;
+    } else {
+      room.currentSong = nextItem._id;
+    }
+
+    await room.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Next song played successfully",
+    });
+  } catch (error) {
+    console.error("Play Next Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error playing next song",
+    });
+  }
 };
 
 export const setCurrentSong = async (req, res) => {
+  const { roomName, queueItemId } = req.body;
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized",
+    });
+  }
 
+  try {
+    const room = await Room.findOne({ roomName: roomName });
+    if (!room) {
+      return res.status(401).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    const isOwner = room.owner._id.toString() === user._id.toString();
+    const isAdmin = room.users.some(
+      (id) => id.toString() === user._id.toString(),
+    );
+
+    if (!isOwner && !isAdmin) {
+      return res.status(401).json({
+        success: false,
+        message: "Only onwner or admin can set the current song",
+      });
+    }
+
+    const queueItem = await QueueItem.findOne({
+      room: room._id,
+      _id: queueItemId,
+    });
+
+    if (!queueItem) {
+      return res.status(404).json({
+        success: false,
+        message: "Song not found in this room",
+      });
+    }
+
+    room.currentSong = queueItem._id;
+    await room.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Current song updated",
+      currentSong: queueItem,
+    });
+  } catch (error) {
+    console.error("Set Current Song Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error setting current song",
+    });
+  }
 };
 
 export const getRoomDetails = async (req, res) => {
+  const { roomName } = req.params;
 
+  try {
+    const room = await Room.findOne({ roomName })
+      .populate("owner", "userName")
+      .populate("admins", "userName")
+      .populate({
+        path: "currentSong",
+        populate: {
+          path: "song",
+          model: "Song",
+        },
+      })
+      .populate({
+        path: "queue",
+        populate: [
+          {
+            path: "song",
+            model: "Song",
+          },
+          {
+            path: "addedBy",
+            model: "User",
+            select: "userName",
+          },
+        ],
+        options: { sort: { position: 1 } },
+      });
+
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "Room not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      room,
+    });
+  } catch (error) {
+    console.error("Get Room Details Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching room details",
+    });
+  }
 };
 
 export const getRoomUsers = async (req, res) => {
-
+	const {roomName} = req.body;
+	
+	try{
+	const room = await Room.findOne({ roomName })
+		 .populate("owner", "userName")
+     .populate("admins", "userName")
+     .populate("users", "userName");
+		
+		if(!room){
+			return res.status(401).json({ 
+				success: false,
+				message: "Room not found"
+			})
+		}
+		
+		return res.status(200).json({
+      success: true,
+      users: {
+        owner: room.owner,
+        admins: room.admins,
+        members: room.users,
+      },
+    });
+	} catch (error){
+		console.error("Get Room Users Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching room users",
+    });
+	}
 };
 
 export const clearSongQueue = async (req, res) => {
+  const {roomName} = req.body;
+  const user = req.user;
 
+  if(!user){
+    return res.status(401).json({
+      success: false,
+      message: "Unauthorized"
+    })
+  };
+  try{
+    const room  = await Room.findOne({
+      roomName : roomName
+    })
+
+    if(!room){
+      return res.status(401).json({
+        success: false,
+        message: "Room not found"
+      })
+    }
+
+    const isOwner = room.owner._id.toString() === user._id.toString()
+    const isAdmin = room.admins.some(
+      id => id.toString() === user._id.toString()
+    )
+
+    if(!isOwner && isAdmin){
+      return res.status(401).json({
+        success: false,
+        message: "Only the Owner or Admin may clear the queue"
+      })
+    }
+
+    const queueItems = await QueueItem.find({
+      room : room._id
+    })
+    
+    const songIds = queueItems.map(item => item.song)
+
+    await QueueItem.deleteMany({ room: room._id})
+
+    await Song.deleteMany({ _id: { $in: songIds } });
+
+    room.queue = [];
+    room.currentSong = null;
+
+    await room.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Queue cleared successfully",
+    });
+
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Some error occured in clearing queue"
+    })
+  }
 };
 
 export const sendRoomMessage = async (req, res) => {
+  const { roomName, message } = req.body;
+  const user = req.user;
 
+  if (!user) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ success: false, message: "Message cannot be empty" });
+  }
+
+  try {
+    const room = await Room.findOne({ roomName });
+
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+
+    const isMember =
+      room.owner.toString() === user._id.toString() ||
+      room.admins.some(id => id.toString() === user._id.toString()) ||
+      room.users.some(id => id.toString() === user._id.toString());
+
+    if (!isMember) {
+      return res.status(403).json({ success: false, message: "Not a member of this room" });
+    }
+
+    const newMessage = await Chat.create({
+      room: room._id,
+      sender: user._id,
+      message: message.trim(),
+    });
+
+    await newMessage.populate("sender", "userName");
+
+    return res.status(201).json({
+      success: true,
+      message: newMessage,
+    });
+
+  } catch (error) {
+    console.error("Send Message Error:", error);
+    return res.status(500).json({ success: false, message: "Error sending message" });
+  }
 };
 
 export const getRoomChat = async (req, res) => {
+  const { roomName } = req.params;
+  const { page = 1, limit = 20 } = req.query;
 
+  try {
+    const room = await Room.findOne({ roomName });
+
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+
+    const messages = await Chat.find({ room: room._id, isDeleted: false })
+      .populate("sender", "userName")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    return res.status(200).json({
+      success: true,
+      messages,
+    });
+
+  } catch (error) {
+    console.error("Get Chat Error:", error);
+    return res.status(500).json({ success: false, message: "Error fetching chat" });
+  }
 };
 
 export const deleteMessage = async (req, res) => {
+  const { messageId } = req.body;
+  const user = req.user;
 
+  if (!user) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  try {
+    const message = await Chat.findById(messageId);
+
+    if (!message) {
+      return res.status(404).json({ success: false, message: "Message not found" });
+    }
+
+    const room = await Room.findById(message.room);
+
+    const isOwner = room.owner.toString() === user._id.toString();
+    const isAdmin = room.admins.some(id => id.toString() === user._id.toString());
+    const isSender = message.sender.toString() === user._id.toString();
+
+    if (!isOwner && !isAdmin && !isSender) {
+      return res.status(403).json({ success: false, message: "Not allowed to delete this message" });
+    }
+
+    message.isDeleted = true;
+    await message.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Message deleted",
+    });
+
+  } catch (error) {
+    console.error("Delete Message Error:", error);
+    return res.status(500).json({ success: false, message: "Error deleting message" });
+  }
 };
 
 export const clearRoomChat = async (req, res) => {
+  const { roomName } = req.body;
+  const user = req.user;
 
+  if (!user) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  try {
+    const room = await Room.findOne({ roomName });
+
+    if (!room) {
+      return res.status(404).json({ success: false, message: "Room not found" });
+    }
+
+    const isOwner = room.owner.toString() === user._id.toString();
+    const isAdmin = room.admins.some(id => id.toString() === user._id.toString());
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: "Only owner/admin can clear chat" });
+    }
+
+    await Chat.updateMany(
+      { room: room._id },
+      { $set: { isDeleted: true } }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Room chat cleared",
+    });
+
+  } catch (error) {
+    console.error("Clear Chat Error:", error);
+    return res.status(500).json({ success: false, message: "Error clearing chat" });
+  }
 };

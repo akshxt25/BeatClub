@@ -3,13 +3,24 @@ import mongoose from "mongoose";
 const chatSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "Room"
+    ref: "Room",
+    required: true,
+    index: true
   },
   sender: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: "User"
+    ref: "User",
+    required: true
   },
-  message: String
+  message: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false
+  }
 }, { timestamps: true });
 
 export default mongoose.model("Chat", chatSchema); 

@@ -1,10 +1,15 @@
 import mongoose from "mongoose";
 
 const linkSchema = new mongoose.Schema({
-    hash : String,
-    userId: {
+    hash : {
+        type: String,
+        required: true,
+        unique: true,
+        index: true
+    },
+    roomId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        ref: "Room",
         required: true,
         unique: true
     }

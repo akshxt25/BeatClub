@@ -55,13 +55,6 @@ const roomSchema = new mongoose.Schema(
       ref: "Content",
     },
 
-    roomChat: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Chat",
-      },
-    ],
-
     ownershipTransfer: {
       active: { type: Boolean, default: false },
       proposedTo: {
