@@ -14,7 +14,6 @@ export const createRoom = async (req, res) => {
     });
   }
   try {
-    console.log("hete");
     const existingRoom = await Room.findOne({
       roomName: roomName,
     });
